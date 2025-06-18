@@ -1,4 +1,3 @@
-// content-script.js
 console.log("✅ Content script is running");
 
 const url = window.location.href;

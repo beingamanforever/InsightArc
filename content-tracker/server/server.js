@@ -1,26 +1,26 @@
 const express = require("express");
 const cors = require("cors");
+
 const app = express();
-const port = 3000;
-
-let visits = [];
-
 app.use(cors());
 app.use(express.json());
 
-// Receives visit logs from the extension
+let visitLogs = [];
+
 app.post("/log-visit", (req, res) => {
   const data = req.body;
-  console.log("📥 Received visit:", data);
-  visits.push(data);
-  res.json({ success: true });
+
+  console.log("📩 Received metadata:", data);
+  visitLogs.push(data);
+
+  res.json({ status: "saved", total: visitLogs.length });
 });
 
-// See all visits in browser at http://localhost:3000/visits
-app.get("/visits", (req, res) => {
-  res.json(visits);
+// Optional: view all logs via browser
+app.get("/logs", (req, res) => {
+  res.json(visitLogs);
 });
 
-app.listen(port, () => {
-  console.log(`🚀 Server running at http://localhost:${port}`);
+app.listen(3000, () => {
+  console.log("✅ Server running at http://localhost:3000");
 });

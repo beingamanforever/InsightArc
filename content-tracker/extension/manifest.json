@@ -3,15 +3,17 @@
   "name": "Content Tracker",
   "version": "1.0",
   "permissions": ["storage", "tabs", "scripting"],
-  "host_permissions": ["<all_urls>"],
+  "host_permissions": ["http://localhost:3000/*"],
   "background": {
     "service_worker": "background.js"
   },
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["content-script.js"],
-      "run_at": "document_idle"
+      "js": ["content-script.js"]
     }
-  ]
+  ],
+  "action": {
+    "default_title": "Tracker"
+  }
 }
