@@ -1,0 +1,3 @@
+[submodule "content-tracker/server/BitNet"]
+	path = content-tracker/server/BitNet
+	url = https://github.com/microsoft/BitNet
