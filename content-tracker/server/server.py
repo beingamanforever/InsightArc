@@ -1,78 +1,137 @@
 from flask import Flask, request, jsonify
-import subprocess
+from llama_cpp import Llama
 import json
 import re
 
 app = Flask(__name__)
 
+# Init model
+# llm = Llama(
+#     model_path="BitNet/models/BitNet-b1.58-2B-4T/ggml-model-i2_s.gguf", 
+#     chat_format="chatml"
+# )
+llm = Llama.from_pretrained(
+    repo_id="ggml-org/gemma-3-1b-it-GGUF",
+    filename="*Q8_0.gguf",
+    n_ctx=4096,
+    verbose=False
+)
+
 # Initialize visit logs
 visit_logs = []
 
-def call_inference(prompt_text, max_length=100):
-    """Call the LLM inference with proper error handling"""
+def call_inference(prompt_text):
+    """Call LLaMA using llama-cpp with JSON schema"""
 
-    command = [
-        "python", "run_inference.py",
-        "-p", prompt_text,
-        "-m", "models/BitNet-b1.58-2B-4T/ggml-model-i2_s.gguf",
-        "-n", "100",
-        "-t", "4",
-        "-c", "2048",
-        "-temp", "0.7",
-    ]
-    
     try:
-        result = subprocess.run(command, check=True, text=True, capture_output=True)
-        return result.stdout.strip()
-    except subprocess.CalledProcessError as e:
-        print("Error:", e.stderr)
-        raise Exception(f"LLM inference failed: {e.stderr}")
+        response = llm.create_chat_completion(
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are a helpful assistant that only responds in strict JSON format.",
+                },
+                {"role": "user", "content": prompt_text},
+            ],
+            response_format={
+                "type": "json_object",
+                "schema": {
+                    "type": "object",
+                    "properties": {
+                        "should_add": {"type": "boolean"},
+                        "type": {
+                            "type": "string",
+                            "enum": ["article", "blog", "video", "other", "none"]
+                        },
+                        "clean_title": {"type": ["string", "null"]},
+                        "reasoning": {"type": "string"}
+                    },
+                    "required": ["should_add", "type", "clean_title", "reasoning"]
+                },
+            },
+            temperature=0.7,
+            max_tokens=1024,
+        )
+        return response["choices"][0]["message"]["content"]
+    
+    except Exception as e:
+        print(f"❌ llama-cpp inference failed: {e}")
+        raise
+
 
 def create_analysis_prompt(page_data):
-    """Create the analysis prompt for the LLM"""
-    prompt = f"""Analyze the following webpage data. Based on its URL, domain, and title, decide if it is a meaningful piece of content worth saving. You must INCLUDE: Standalone articles, in-depth blog posts, specific videos (not channel pages), tutorials, and documentation. The content should be something a person would intentionally "read" or "watch." You must EXCLUDE: Homepages or Dashboards, Feeds or Listings, search Results Pages, User Profiles or Account Pages, Transactional Pages.
-Output Format:
-Respond ONLY with a valid JSON object matching this schema:
-{{"should_add": <boolean>, "type": <"article" | "video" | "other" | "none">, "clean_title": <string | null>, "reasoning": <string>}}
+    prompt = f"""
+You are a JSON-only assistant.
 
+Your job is to decide if a web page is meaningful standalone content like an article, blog or video.
 
-Input Data:
+Only say `should_add: true` if the URL clearly shows it's a specific article, post, tutorial, or video.
+
+Reject it if it's a homepage, profile, feed, or if the URL does not clearly show specific content.
+
+If you're not sure, reject it.
+
+Respond only with valid JSON in this format:
+{{
+  "should_add": <true|false>,
+  "type": <"article"|"blog"|"video"|"other"|"none">,
+  "clean_title": <string|null>,
+  "reasoning": <string>
+}}
+
+Here is the input:
 {json.dumps(page_data, indent=2)}
 
-Respond only once in JSON only output.
-"""
-    
-    return prompt
 
+"""
+    return prompt.strip()
+
+    
+    return prompt.strip()
+# def extract_json_from_response(response_text):
+#     """Extract the first valid JSON object from the response text."""
+#     try:
+#         # Try to load the entire response
+#         return json.loads(response_text)
+#     except json.JSONDecodeError:
+#         # Find the first JSON-like object
+#         match = re.search(r"\{.*?\}", response_text, re.DOTALL)
+#         if match:
+#             try:
+#                 return json.loads(match.group(0))
+#             except json.JSONDecodeError:
+#                 pass  # Fall through to fallback
+
+#     # Fallback if nothing could be parsed
+#     return {
+#         "should_add": False,
+#         "type": "none",
+#         "clean_title": None,
+#         "reasoning": "Failed to parse LLM response"
+#     }
 def extract_json_from_response(response_text):
-    """Extract the first valid JSON object from the response text."""
     try:
-        # Try to load the entire response
         return json.loads(response_text)
     except json.JSONDecodeError:
-        # Find the first JSON-like object
-        match = re.search(r"\{.*?\}", response_text, re.DOTALL)
-        if match:
-            try:
-                return json.loads(match.group(0))
-            except json.JSONDecodeError:
-                pass  # Fall through to fallback
+        return {
+            "should_add": False,
+            "type": "none",
+            "clean_title": None,
+            "reasoning": "Failed to parse LLM response"
+        }
 
-    # Fallback if nothing could be parsed
-    return {
-        "should_add": False,
-        "type": "none",
-        "clean_title": None,
-        "reasoning": "Failed to parse LLM response"
-    }
 
 def analyze_content_with_llm(page_data):
     """Analyze page content using the LLM"""
     try:
         prompt = create_analysis_prompt(page_data)
-        response = call_inference(prompt, max_length=80)
-        print("Raw LLM response:", response)
-        
+        response = call_inference(prompt)
+        print("Raw LLM response:")
+        try:
+            parsed = json.loads(response)
+            print(json.dumps(parsed, indent=2))
+        except:
+            print(response)
+
         # Extract and validate JSON response
         analysis = extract_json_from_response(response)
         
